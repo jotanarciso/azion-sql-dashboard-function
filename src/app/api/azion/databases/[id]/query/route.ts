@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDatabase } from 'azion/sql';
+import { useQuery as azionQuery, useExecute as azionExecute } from 'azion/sql';
+
+export const runtime = 'edge';
 
 export async function POST(
   request: NextRequest,
@@ -28,8 +30,8 @@ export async function POST(
     // Configurar token do SDK
     process.env.AZION_TOKEN = authHeader.replace('Token ', '');
 
-    // Buscar database pelo nome
-    const { data: dbData, error } = await getDatabase(params.id);
+    // Usar azionQuery para queries de leitura
+    const { data, error } = await azionQuery(params.id, statements);
 
     if (error) {
       return NextResponse.json(
@@ -38,25 +40,16 @@ export async function POST(
       );
     }
 
-    if (!dbData) {
-      return NextResponse.json(
-        { error: 'Database não encontrado' },
-        { status: 404 }
-      );
+    if (data) {
+      const results = data.toObject();
+      return NextResponse.json({
+        results: results?.results || []
+      });
     }
 
-    // Executar query
-    const result = await dbData.query(statements);
-    
-    if (!result) {
-      return NextResponse.json(
-        { error: 'Erro ao executar query' },
-        { status: 500 }
-      );
-    }
-
-    const results = result.data?.toObject();
-    return NextResponse.json(results);
+    return NextResponse.json({
+      results: []
+    });
 
   } catch (error) {
     console.error('Erro ao executar query:', error);
@@ -94,8 +87,8 @@ export async function PUT(
     // Configurar token do SDK
     process.env.AZION_TOKEN = authHeader.replace('Token ', '');
 
-    // Buscar database pelo nome
-    const { data: dbData, error } = await getDatabase(params.id);
+    // Usar azionExecute para operações de escrita
+    const { data, error } = await azionExecute(params.id, statements, { force: true });
 
     if (error) {
       return NextResponse.json(
@@ -104,25 +97,16 @@ export async function PUT(
       );
     }
 
-    if (!dbData) {
-      return NextResponse.json(
-        { error: 'Database não encontrado' },
-        { status: 404 }
-      );
+    if (data) {
+      const results = data.toObject();
+      return NextResponse.json({
+        results: results?.results || []
+      });
     }
 
-    // Executar comando
-    const result = await dbData.execute(statements);
-    
-    if (!result) {
-      return NextResponse.json(
-        { error: 'Erro ao executar comando' },
-        { status: 500 }
-      );
-    }
-
-    const results = result.data?.toObject();
-    return NextResponse.json(results);
+    return NextResponse.json({
+      results: []
+    });
 
   } catch (error) {
     console.error('Erro ao executar comando:', error);

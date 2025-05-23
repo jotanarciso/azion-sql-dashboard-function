@@ -4,13 +4,10 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useAzionConfig } from '@/hooks/useAzionConfig';
+import { useAzionConfig } from '@/contexts/AzionConfigContext';
+import { getAzionClient } from '@/lib/azion-client';
 
-interface TokenSetupProps {
-  onConfigured: () => void;
-}
-
-export function TokenSetup({ onConfigured }: TokenSetupProps) {
+export function TokenSetup() {
   const [token, setToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,14 +17,7 @@ export function TokenSetup({ onConfigured }: TokenSetupProps) {
     e.preventDefault();
     
     if (!token.trim()) {
-      setError('Por favor, insira o token');
-      return;
-    }
-
-    // Validação básica do formato do token
-    const cleanToken = token.trim();
-    if (cleanToken.length < 10) {
-      setError('Token muito curto. Verifique se copiou corretamente.');
+      setError('Token is required');
       return;
     }
 
@@ -35,16 +25,29 @@ export function TokenSetup({ onConfigured }: TokenSetupProps) {
     setError(null);
 
     try {
-      // Salvar token e configurar cliente
-      saveToken(cleanToken);
+      // Enviar token para ser criptografado e armazenado no backend
+      const response = await fetch('/api/auth/store-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
       
-      // Pequeno delay para dar tempo do cliente ser configurado
-      await new Promise(resolve => setTimeout(resolve, 100));
+      if (!response.ok) {
+        const errorData = await response.json();
+        setError(`Authentication failed: ${errorData.error || `HTTP ${response.status}`}`);
+        return;
+      }
+
+      const { sessionId } = await response.json();
       
-      onConfigured();
-    } catch (err) {
-      setError('Erro ao configurar token. Tente novamente.');
-      console.error('Erro:', err);
+      // Salvar apenas o sessionId no localStorage
+      saveToken(sessionId);
+      
+    } catch (err: any) {
+      console.error('Authentication error:', err);
+      setError(`Authentication failed: ${err.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +61,7 @@ export function TokenSetup({ onConfigured }: TokenSetupProps) {
             Azion SQL Dashboard
           </CardTitle>
           <CardDescription>
-            Insira seu Personal Token da Azion para começar
+            Enter your Azion Personal Token to get started
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -70,14 +73,14 @@ export function TokenSetup({ onConfigured }: TokenSetupProps) {
               <Input
                 id="token"
                 type="password"
-                placeholder="Digite seu token aqui..."
+                placeholder="Enter your token here..."
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 required
                 disabled={isLoading}
               />
               <p className="mt-2 text-xs text-gray-500">
-                Você pode encontrar seu Personal Token no{' '}
+                You can find your Personal Token in the{' '}
                 <a 
                   href="https://manager.azion.com/personal-tokens" 
                   target="_blank" 
@@ -96,7 +99,7 @@ export function TokenSetup({ onConfigured }: TokenSetupProps) {
               className="w-full" 
               disabled={!token.trim() || isLoading}
             >
-              {isLoading ? 'Configurando...' : 'Conectar'}
+              {isLoading ? 'Connecting...' : 'Connect'}
             </Button>
           </form>
         </CardContent>

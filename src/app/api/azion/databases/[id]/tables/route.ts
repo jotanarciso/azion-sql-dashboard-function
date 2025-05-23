@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDatabase } from 'azion/sql';
+import { useQuery as azionQuery } from 'azion/sql';
+
+export const runtime = 'edge';
 
 export async function GET(
   request: NextRequest,
@@ -18,8 +20,10 @@ export async function GET(
     // Configurar token do SDK
     process.env.AZION_TOKEN = authHeader.replace('Token ', '');
 
-    // Buscar database pelo nome
-    const { data: dbData, error } = await getDatabase(params.id);
+    // Usar azionQuery para listar tabelas
+    const { data, error } = await azionQuery(params.id, [
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ]);
 
     if (error) {
       return NextResponse.json(
@@ -28,28 +32,19 @@ export async function GET(
       );
     }
 
-    if (!dbData) {
-      return NextResponse.json(
-        { error: 'Database não encontrado' },
-        { status: 404 }
-      );
+    if (data) {
+      const results = data.toObject();
+      return NextResponse.json({
+        results: results?.results || []
+      });
     }
 
-    // Usar getTables do database
-    const tables = await dbData.getTables();
-    
-    if (!tables) {
-      return NextResponse.json(
-        { error: 'Erro ao buscar tabelas' },
-        { status: 500 }
-      );
-    }
-
-    const results = tables.data?.toObject();
-    return NextResponse.json(results);
+    return NextResponse.json({
+      results: []
+    });
 
   } catch (error) {
-    console.error('Erro ao listar tabelas:', error);
+    console.error('Erro ao buscar tabelas:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

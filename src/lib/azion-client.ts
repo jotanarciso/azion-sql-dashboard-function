@@ -1,22 +1,19 @@
-import { createClient } from 'azion/sql';
-import type { AzionSQLClient } from 'azion/sql';
+import { decryptToken } from './crypto-utils';
 
 interface Database {
   id: number;
   name: string;
-  clientId: string;
-  createdAt: string;
-  updatedAt: string;
+  client_id: string;
+  created_at: string;
+  updated_at: string;
   status: string;
+  deleted_at: string | null;
+  is_active: boolean;
 }
 
 interface DatabasesResponse {
-  databases: Database[];
+  results: Database[];
   count: number;
-}
-
-interface TableInfo {
-  name: string;
 }
 
 interface QueryResult {
@@ -25,23 +22,55 @@ interface QueryResult {
 }
 
 class AzionClient {
-  private token: string;
+  private _token: string;
 
   constructor(token: string) {
-    this.token = token;
+    this._token = token;
+  }
+
+  get token(): string {
+    return this._token;
   }
 
   private getHeaders() {
     return {
-      'Authorization': `Token ${this.token}`,
+      'Authorization': `Token ${this._token}`,
       'Content-Type': 'application/json',
     };
   }
 
   async getDatabases(): Promise<{ data?: DatabasesResponse; error?: { message: string } }> {
     try {
+      console.log('Iniciando getDatabases...');
+      const headers = this.getHeaders();
+      console.log('Headers:', { ...headers, Authorization: headers.Authorization ? `${headers.Authorization.substring(0, 15)}...` : 'null' });
+      
       const response = await fetch('/api/azion/databases', {
         method: 'GET',
+        headers,
+      });
+
+      console.log('Resposta recebida:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log('Erro na resposta:', errorData);
+        return { error: { message: errorData.error || `HTTP ${response.status}` } };
+      }
+
+      const data = await response.json();
+      console.log('Dados recebidos:', data);
+      return { data };
+    } catch (err: any) {
+      console.error('Erro no getDatabases:', err);
+      return { error: { message: `Erro de rede: ${err.message || err}` } };
+    }
+  }
+
+  async deleteDatabase(databaseId: number): Promise<{ data?: any; error?: { message: string } }> {
+    try {
+      const response = await fetch(`/api/azion/databases/${databaseId}`, {
+        method: 'DELETE',
         headers: this.getHeaders(),
       });
 
@@ -52,8 +81,8 @@ class AzionClient {
 
       const data = await response.json();
       return { data };
-    } catch (error) {
-      return { error: { message: `Erro de rede: ${error}` } };
+    } catch (err: any) {
+      return { error: { message: `Erro de rede: ${err.message || err}` } };
     }
   }
 
@@ -71,8 +100,8 @@ class AzionClient {
 
       const data = await response.json();
       return { data };
-    } catch (error) {
-      return { error: { message: `Erro de rede: ${error}` } };
+    } catch (err: any) {
+      return { error: { message: `Erro de rede: ${err.message || err}` } };
     }
   }
 
@@ -91,8 +120,8 @@ class AzionClient {
 
       const data = await response.json();
       return { data };
-    } catch (error) {
-      return { error: { message: `Erro de rede: ${error}` } };
+    } catch (err: any) {
+      return { error: { message: `Erro de rede: ${err.message || err}` } };
     }
   }
 
@@ -111,28 +140,43 @@ class AzionClient {
 
       const data = await response.json();
       return { data };
-    } catch (error) {
-      return { error: { message: `Erro de rede: ${error}` } };
+    } catch (err: any) {
+      return { error: { message: `Erro de rede: ${err.message || err}` } };
     }
   }
 }
 
 let azionClient: AzionClient | null = null;
 
-export function configureAzionClient(token: string) {
-  console.log('Configurando cliente Azion com token:', token.substring(0, 10) + '...');
-  azionClient = new AzionClient(token);
-}
-
-export function getAzionClient(): AzionClient {
-  if (!azionClient) {
-    console.error('Cliente Azion não configurado!');
-    throw new Error('Cliente Azion não configurado. Chame configureAzionClient primeiro.');
+export async function getAzionClient(): Promise<AzionClient> {
+  const encryptedToken = localStorage.getItem('azion_token');
+  console.log('Token criptografado lido do localStorage:', encryptedToken ? `${encryptedToken.substring(0, 10)}...` : 'null');
+  
+  if (!encryptedToken) {
+    console.log('Token não encontrado no localStorage');
+    azionClient = null;
+    throw new Error('Cliente Azion não configurado. Token não encontrado.');
   }
-  console.log('Cliente Azion obtido com sucesso');
-  return azionClient;
+
+  try {
+    // Descriptografar o token
+    const token = await decryptToken(encryptedToken);
+    console.log('Token descriptografado:', token ? `${token.substring(0, 10)}...` : 'null');
+
+    // Se não existe cliente ou o token mudou, criar novo cliente
+    if (!azionClient || azionClient.token !== token) {
+      console.log('Criando novo AzionClient...');
+      azionClient = new AzionClient(token);
+      console.log('AzionClient criado com sucesso');
+    }
+    
+    return azionClient;
+  } catch (error) {
+    console.error('Erro ao descriptografar token:', error);
+    throw new Error('Erro ao descriptografar token');
+  }
 }
 
 export function clearAzionClient() {
   azionClient = null;
-} 
+}
